@@ -48,6 +48,18 @@ class FriendRequest(models.Model):
     to_user = models.ForeignKey(User, related_name='friend_requests_received', on_delete=models.CASCADE) # Kimga so'rov kelgan
     created_at = models.DateTimeField(auto_now_add=True) # Qachon so'rov yuborilgan 
     
+    class Meta:
+        unique_together = ('from_user', 'to_user')
+    
     def __str__(self):
         return f'{self.from_user.username} -> {self.to_user.username}'
     
+class Chat(models.Model):
+    name = models.CharField(max_length=100) # Chat nomi
+    creator = models.ForeignKey(User, on_delete=models.CASCADE) # Kim yaratgan
+    members = models.ManyToManyField(User, related_name="chats") # Chat a'zolari
+    created_at = models.DateTimeField(auto_now_add=True) # Qachon yaratilgan
+    
+    
+    def __str__(self):
+        return self.name
