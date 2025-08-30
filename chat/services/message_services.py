@@ -83,7 +83,11 @@ def mark_message_as_read(message_or_id: Union[Message, int], reader: Optional[Us
             raise AttributeError("Message instance has no 'chat' attribute.")
         is_member = chat_obj.members.filter(pk=reader.pk).exists() or getattr(chat_obj, "creator_id", None) == reader.pk
         if not is_member:
-            logger.warning("User %s attempted to mark message %s as read but is not a chat member.", reader.id, message.pk)
+            logger.warning(
+                "User %s attempted to mark message %s as read but is not a chat member.",
+                getattr(reader, "id", getattr(reader, "pk", None)),
+                getattr(message, "id", getattr(message, "pk", None)),
+            )
             raise PermissionError("User is not a member of the chat.")
 
     if hasattr(message, "is_read"):
@@ -107,8 +111,8 @@ def delete_message(message_or_id: Union[Message, int], actor: Optional[User] = N
 
     if actor is not None:
         # o'chirishga ruxsat: yuboruvchi yoki staff/superuser
-        if not (actor.is_staff or getattr(message, "sender_id", None) == actor.id):
-            logger.warning("User %s attempted to delete message %s without permission.", actor.id, message.id)
+        if not (actor.is_staff or getattr(message, "sender_id", None) == actor.pk):
+            logger.warning("User %s attempted to delete message %s without permission.", actor.pk, message.pk)
             raise PermissionError("Actor is not allowed to delete this message.")
 
     message.delete()
@@ -125,8 +129,8 @@ def edit_message(message_or_id: Union[Message, int], actor: Optional[User], new_
         raise ObjectDoesNotExist("Message not found.")
 
     if actor is not None:
-        if not (actor.is_staff or getattr(message, "sender_id", None) == actor.id):
-            logger.warning("User %s attempted to edit message %s without permission.", actor.id, message.id)
+        if not (actor.is_staff or getattr(message, "sender_id", None) == actor.pk):
+            logger.warning("User %s attempted to edit message %s without permission.", actor.pk, message.pk)
             raise PermissionError("Actor is not allowed to edit this message.")
 
     new_content = (new_content or "").strip()
@@ -137,7 +141,7 @@ def edit_message(message_or_id: Union[Message, int], actor: Optional[User], new_
     try:
         message.full_clean()
     except ValidationError as e:
-        logger.warning("Validation error when editing message %s: %s", message.id, e)
+        logger.warning("Validation error when editing message %s: %s", message.pk, e)
         raise
     message.save(update_fields=["content"])
     return message
