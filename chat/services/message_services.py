@@ -9,6 +9,15 @@ from chat.models import User, Chat, Message
 logger = logging.getLogger(__name__)
 
 
+def get_object_id(obj):
+    """Helper to get the id or pk of an object, or None if not present."""
+    return getattr(obj, "id", getattr(obj, "pk", None))
+
+
+def get_object_id(obj):
+    """Helper to get id or pk from an object, or None if not present."""
+    return getattr(obj, "id", getattr(obj, "pk", None))
+
 def send_message(sender: User, content: str, chat: Chat) -> Message:
     """
     Berilgan `sender` tomonidan `chat`ga yuborilgan Message (xabari) yaratadi va qaytaradi.
@@ -17,13 +26,13 @@ def send_message(sender: User, content: str, chat: Chat) -> Message:
     - Qisman yozuvlarni oldini olish uchun transaction ishlatadi.
     """
     content = (content or "").strip()
-    if not content:
-        raise ValueError("Message content cannot be empty.")
-
-    # ruxsat tekshiruvi: yuboruvchi chat a'zosi bo'lishi kerak (yoki yaratuvchi)
     is_member = chat.members.filter(pk=sender.pk).exists() or getattr(chat, "creator_id", None) == sender.pk
     if not is_member:
-        logger.warning("User %s attempted to send message to chat %s but is not a member.", sender.pk, getattr(chat, "id", None))
+        logger.warning("User %s attempted to send message to chat %s but is not a member.", get_object_id(sender), get_object_id(chat))
+        raise PermissionError("Sender is not a member of the chat.")
+    is_member = chat.members.filter(pk=sender.pk).exists() or getattr(chat, "creator_id", None) == sender.pk
+    if not is_member:
+        logger.warning("User %s attempted to send message to chat %s but is not a member.", get_object_id(sender), get_object_id(chat))
         raise PermissionError("Sender is not a member of the chat.")
 
     try:
@@ -77,16 +86,16 @@ def mark_message_as_read(message_or_id: Union[Message, int], reader: Optional[Us
 
     if reader is not None:
         # Message modelida 'chat' ForeignKey mavjudligini ta'minlang; aks holda to'g'ri field nomini ishlating.
-        chat_obj = getattr(message, "chat", None)
-        if chat_obj is None:
-            logger.error("Message instance has no 'chat' attribute. Please check the Message model definition.")
-            raise AttributeError("Message instance has no 'chat' attribute.")
         is_member = chat_obj.members.filter(pk=reader.pk).exists() or getattr(chat_obj, "creator_id", None) == reader.pk
         if not is_member:
             logger.warning(
                 "User %s attempted to mark message %s as read but is not a chat member.",
-                getattr(reader, "id", getattr(reader, "pk", None)),
-                getattr(message, "id", getattr(message, "pk", None)),
+                get_object_id(reader),
+                get_object_id(message),
+            )
+            raise PermissionError("User is not a member of the chat.")
+                get_object_id(reader),
+                get_object_id(message),
             )
             raise PermissionError("User is not a member of the chat.")
 
@@ -107,12 +116,16 @@ def delete_message(message_or_id: Union[Message, int], actor: Optional[User] = N
     message = _resolve_message(message_or_id)
     if message is None:
         logger.debug("delete_message: message not found: %s", message_or_id)
-        return False
-
-    if actor is not None:
-        # o'chirishga ruxsat: yuboruvchi yoki staff/superuser
-        if not (actor.is_staff or getattr(message, "sender_id", None) == actor.pk):
-            logger.warning("User %s attempted to delete message %s without permission.", actor.pk, message.pk)
+        if not (actor.is_staff or getattr(message, "sender_id", None) == get_object_id(actor)):
+            logger.warning(
+                "User %s attempted to delete message %s without permission.",
+                get_object_id(actor),
+                get_object_id(message),
+            )
+            raise PermissionError("Actor is not allowed to delete this message.")
+                get_object_id(actor),
+                get_object_id(message),
+            )
             raise PermissionError("Actor is not allowed to delete this message.")
 
     message.delete()
@@ -124,24 +137,29 @@ def edit_message(message_or_id: Union[Message, int], actor: Optional[User], new_
     Xabar matnini tahrirlash. Actor yuboruvchi (yoki staff) bo'lishi kerak. Yangilangan Message ni qaytaradi.
     - Yangi matn bo'sh emasligini tekshiradi va mavjud bo'lsa full_clean chaqiradi.
     """
-    message = _resolve_message(message_or_id)
-    if message is None:
-        raise ObjectDoesNotExist("Message not found.")
-
     if actor is not None:
-        if not (actor.is_staff or getattr(message, "sender_id", None) == actor.pk):
-            logger.warning("User %s attempted to edit message %s without permission.", actor.pk, message.pk)
+        if not (actor.is_staff or getattr(message, "sender_id", None) == get_object_id(actor)):
+            logger.warning(
+                "User %s attempted to edit message %s without permission.",
+                get_object_id(actor),
+                get_object_id(message),
+            )
+            raise PermissionError("Actor is not allowed to edit this message.")
+                get_object_id(actor),
+                get_object_id(message),
+            )
             raise PermissionError("Actor is not allowed to edit this message.")
 
     new_content = (new_content or "").strip()
-    if not new_content:
-        raise ValueError("New content cannot be empty.")
-
-    message.content = new_content
     try:
         message.full_clean()
     except ValidationError as e:
-        logger.warning("Validation error when editing message %s: %s", message.pk, e)
+        msg_id = get_object_id(message)
+        logger.warning("Validation error when editing message %s: %s", msg_id, e)
+        raise
+    message.save(update_fields=["content"])
+    return message
+        logger.warning("Validation error when editing message %s: %s", msg_id, e)
         raise
     message.save(update_fields=["content"])
     return message
